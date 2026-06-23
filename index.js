@@ -11,7 +11,7 @@ app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = process.env.MONGODB_URI;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -46,10 +46,24 @@ async function run() {
       }
     });
 
+    // find ticket by id
+    app.get('/api/tickets/:id', async(req, res)=>{
+      const id = req.params.id;
+      const query = {
+        _id: new ObjectId(id)
+      }
+      const result = await ticketsCollection.findOne(query);
+      res.send(result);
+    })
+
     // added tickets
     app.post("/api/tickets", async (req, res) => {
       const tickets = req.body;
-      const result = await ticketsCollection.insertOne(tickets);
+      const newTickets={
+        ...tickets,
+        createAt: new Date()
+      }
+      const result = await ticketsCollection.insertOne(newTickets);
       res.send(result);
     });
 
