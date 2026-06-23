@@ -31,6 +31,7 @@ async function run() {
     // save data
     const database = client.db("ticketbari_db");
     const ticketsCollection = database.collection("tickets");
+    const bookingsCollection = database.collection("booking");
 
     // vendor-----
     // find tickets
@@ -61,9 +62,20 @@ async function run() {
       const tickets = req.body;
       const newTickets={
         ...tickets,
-        createAt: new Date()
+        createdAt: new Date()
       }
       const result = await ticketsCollection.insertOne(newTickets);
+      res.send(result);
+    });
+
+    // booking
+       app.post("/api/bookings", async (req, res) => {
+      const bookings = req.body;
+      const newBookings={
+        ...bookings,
+        createdAt: new Date()
+      }
+      const result = await bookingsCollection.insertOne(newBookings);
       res.send(result);
     });
 
