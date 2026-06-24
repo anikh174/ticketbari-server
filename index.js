@@ -41,40 +41,68 @@ async function run() {
         const result = await cursor.toArray();
         res.send(result);
       } catch (error) {
-        res
-          .status(500)
-          .send({ message: "failed data fetching", error });
+        res.status(500).send({ message: "failed data fetching", error });
       }
     });
 
     // find ticket by id
-    app.get('/api/tickets/:id', async(req, res)=>{
+    app.get("/api/tickets/:id", async (req, res) => {
       const id = req.params.id;
       const query = {
-        _id: new ObjectId(id)
-      }
+        _id: new ObjectId(id),
+      };
       const result = await ticketsCollection.findOne(query);
       res.send(result);
-    })
+    });
 
     // added tickets
     app.post("/api/tickets", async (req, res) => {
       const tickets = req.body;
-      const newTickets={
+      const newTickets = {
         ...tickets,
-        createdAt: new Date()
-      }
+        createdAt: new Date(),
+      };
       const result = await ticketsCollection.insertOne(newTickets);
       res.send(result);
     });
 
     // booking
-       app.post("/api/bookings", async (req, res) => {
-      const bookings = req.body;
-      const newBookings={
-        ...bookings,
-        createdAt: new Date()
+    // get api
+    // app.get('/api/bookings', async(req, res)=>{
+    //   const query = {};
+    //   if(req.query.userId){
+    //     query.userId = req.query.userId;
+    //   }
+    //   const cursor = bookingsCollection.find(query);
+    //   const result = await cursor.toArray();
+    //   res.send(result);
+    // })
+
+    app.get("/api/bookings", async (req, res) => {
+      try {
+        const query = {};
+        if (req.query.userId) {
+          query.userId = req.query.userId;
+        }
+
+        const cursor = bookingsCollection.find(query).sort({ _id: -1 });
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching bookings:", error);
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
+    });
+
+    // post api
+    app.post("/api/bookings", async (req, res) => {
+      const bookings = req.body;
+      const newBookings = {
+        ...bookings,
+        createdAt: new Date(),
+      };
       const result = await bookingsCollection.insertOne(newBookings);
       res.send(result);
     });
