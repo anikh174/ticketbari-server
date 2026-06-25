@@ -104,7 +104,7 @@ async function run() {
         const bookings = req.body;
         const newBookings = {
           ...bookings,
-          status: "pending", // ডিফল্ট স্ট্যাটাস হিসেবে পেন্ডিং সেট করা নিরাপদ
+          status: "pending", 
           createdAt: new Date(),
         };
         const result = await bookingsCollection.insertOne(newBookings);
@@ -114,7 +114,7 @@ async function run() {
       }
     });
 
-    // ১. Stripe Checkout Session তৈরি করার API (ইমেইল অটো-ফিলসহ)
+    // ১. Stripe Checkout Session তৈরি করার API
     app.post("/api/checkout", async (req, res) => {
       try {
         const { bookingId, amount, email } = req.body;
@@ -125,13 +125,11 @@ async function run() {
             .send({ message: "Missing bookingId or amount" });
         }
 
-        // স্ট্রাইপ সেন্ট/পয়সায় হিসাব করে, তাই ১০০ দিয়ে গুন করতে হবে
         const unitAmount = Math.round(amount * 100);
 
         const sessionData = {
           payment_method_types: ["card"],
           mode: "payment",
-          // সফল হলে ইউআরএল-এ {CHECKOUT_SESSION_ID} পাস করা হচ্ছে যা স্ট্রাইপ তার অরিজিনাল আইডি দিয়ে রিপ্লেস করবে
           success_url: `http://localhost:3000/dashboard/user/payment/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${bookingId}`,
           cancel_url: `http://localhost:3000/dashboard/user/payment/cancel?canceled=true`,
           line_items: [
@@ -149,14 +147,11 @@ async function run() {
           ],
         };
 
-        // ফ্রন্টএন্ড থেকে ইমেইল আসলে তা স্ট্রাইপ সেশনে যুক্ত করা হচ্ছে
         if (email) {
           sessionData.customer_email = email;
         }
 
         const session = await stripe.checkout.sessions.create(sessionData);
-
-        // ফ্রন্টএন্ডে স্ট্রাইপ চেকআউট URL-টি পাঠানো হচ্ছে
         res.send({ url: session.url });
       } catch (error) {
         console.error("Stripe Error:", error);
@@ -166,7 +161,7 @@ async function run() {
       }
     });
 
-    // ২. পেমেন্ট সফল হওয়ার পর ব্যাকএন্ডে স্ট্রাইপ থেকে ভেরিফাই করে ডাটাবেজ আপডেট করার এপিআই
+    // ২. পেমেন্ট সফল হওয়ার পর ব্যাকএন্ডে ভেরিফাই করার এপিআই
     app.post("/api/bookings/verify-payment", async (req, res) => {
       try {
         const { sessionId, bookingId } = req.body;
@@ -175,14 +170,13 @@ async function run() {
           return res.status(400).send({ success: false, message: "Missing sessionId or bookingId" });
         }
 
-        // স্ট্রাইপ সার্ভার থেকে সেশনটির অরিজিনাল পেমেন্ট স্ট্যাটাস চেক করা হচ্ছে
         const session = await stripe.checkout.sessions.retrieve(sessionId);
 
         if (session.payment_status === "paid") {
           const filter = { _id: new ObjectId(bookingId) };
           const updateDoc = {
             $set: {
-              status: "paid", // ভেরিফিকেশন সফল হলে স্ট্যাটাস paid হবে
+              status: "paid", 
               stripeSessionId: sessionId,
               paidAt: new Date(),
             },
@@ -217,11 +211,34 @@ async function run() {
       }
     });
 
+// ==================== TRANSACTIONS HISTORY API ====================
+// নির্দিষ্ট ইউজারের সফল ট্রানজেকশন হিস্ট্রি পাওয়ার এন্ডপয়েন্ট
+app.get("/api/transactions", async (req, res) => {
+  try {
+    const { email } = req.query;
+
+    if (!email) {
+      return res.status(400).send({ message: "Email query parameter is required" });
+    }
+
+    // 🌟 এখানে 'email'-এর জায়গায় 'userEmail' ব্যবহার করা হয়েছে (আপনার ফ্রন্টএন্ড অনুযায়ী)
+    const query = { 
+      userEmail: email, 
+      status: "paid" // স্ট্রাইপ পেমেন্ট সফল হলে আপনার কোড এটিকে ছোট হাতের "paid" করে দেয়
+    };
+
+    // লেটেস্ট পেমেন্ট সবার উপরে দেখানোর জন্য sort করা হয়েছে
+    const result = await bookingsCollection.find(query).sort({ paidAt: -1 }).toArray();
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching transactions:", error);
+    res.status(500).send({ message: "Internal server error", error: error.message });
+  }
+});
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!",
-    );
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
