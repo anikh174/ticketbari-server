@@ -236,6 +236,35 @@ app.get("/api/transactions", async (req, res) => {
   }
 });
 
+// ==================== ADMIN TICKETS MANAGEMENT API ====================
+
+// Update ticket status (Approve / Reject)
+app.patch("/api/tickets/:id/status", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { status } = req.body; // Expecting 'approved' or 'rejected'
+
+    if (!["approved", "rejected"].includes(status)) {
+      return res.status(400).send({ message: "Invalid status status type" });
+    }
+
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: { status: status },
+    };
+
+    const result = await ticketsCollection.updateOne(filter, updateDoc);
+
+    if (result.modifiedCount > 0) {
+      res.send({ success: true, message: `Ticket status updated to ${status}` });
+    } else {
+      res.status(404).send({ success: false, message: "Ticket not found or status unchanged" });
+    }
+  } catch (error) {
+    res.status(500).send({ message: "Internal server error", error: error.message });
+  }
+});
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
