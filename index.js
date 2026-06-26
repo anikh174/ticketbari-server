@@ -355,6 +355,48 @@ app.get("/api/admin/stats", async (req, res) => {
   }
 });
 
+  // ==================== VENDOR BOOKINGS MANAGEMENT API ====================
+
+// 1. Fetch all bookings for the management layout
+app.get("/api/vendor/bookings", async (req, res) => {
+  try {
+    // Fetches all bookings sorted by newest requests first
+    const cursor = bookingsCollection.find({}).sort({ _id: -1 });
+    const result = await cursor.toArray();
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching vendor bookings:", error);
+    res.status(500).send({ message: "Internal server error", error: error.message });
+  }
+});
+
+// 2. Patch Route to Update Booking Status (Accept / Reject)
+app.patch("/api/bookings/:id/status", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { status } = req.body; // Expecting 'accepted' or 'rejected'
+
+    if (!["accepted", "rejected"].includes(status)) {
+      return res.status(400).send({ message: "Invalid status type. Must be accepted or rejected." });
+    }
+
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: { status: status },
+    };
+
+    const result = await bookingsCollection.updateOne(filter, updateDoc);
+
+    if (result.modifiedCount > 0) {
+      res.send({ success: true, message: `Booking status successfully updated to ${status}` });
+    } else {
+      res.status(404).send({ success: false, message: "Booking item not found or status went unchanged" });
+    }
+  } catch (error) {
+    console.error("Error updating booking status:", error);
+    res.status(500).send({ message: "Internal server error", error: error.message });
+  }
+});
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
