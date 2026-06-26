@@ -265,6 +265,51 @@ app.patch("/api/tickets/:id/status", async (req, res) => {
   }
 });
 
+
+// Toggle Ticket Advertisement Status (Max 6)
+app.patch("/api/tickets/:id/advertise", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { isAdvertised } = req.body; // Expecting true or false
+
+    if (typeof isAdvertised !== "boolean") {
+      return res.status(400).send({ message: "Invalid advertisement status type" });
+    }
+
+    // If trying to advertise, check how many are already advertised
+    if (isAdvertised) {
+      const advertisedCount = await ticketsCollection.countDocuments({ isAdvertised: true });
+      if (advertisedCount >= 6) {
+        return res.status(400).send({ 
+          success: false, 
+          message: "Limit reached! You cannot advertise more than 6 tickets at a time." 
+        });
+      }
+    }
+
+    const filter = { _id: new ObjectId(id), status: "approved" }; // Only allow approved tickets
+    const updateDoc = {
+      $set: { isAdvertised: isAdvertised },
+    };
+
+    const result = await ticketsCollection.updateOne(filter, updateDoc);
+
+    if (result.modifiedCount > 0) {
+      res.send({ 
+        success: true, 
+        message: isAdvertised ? "Ticket added to advertisements" : "Ticket removed from advertisements" 
+      });
+    } else {
+      res.status(404).send({ 
+        success: false, 
+        message: "Ticket not found, not approved, or advertisement status unchanged" 
+      });
+    }
+  } catch (error) {
+    res.status(500).send({ message: "Internal server error", error: error.message });
+  }
+});
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
