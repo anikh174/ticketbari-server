@@ -398,6 +398,55 @@ app.patch("/api/bookings/:id/status", async (req, res) => {
   }
 });
 
+// ==================== VENDOR REVENUE STATS API (FIXED FOR TOTALPRICE) ====================
+app.get("/api/vendor/revenue-stats", async (req, res) => {
+  try {
+    // ১. মোট অ্যাড করা টিকিটের সংখ্যা
+    const totalTicketsAdded = await ticketsCollection.countDocuments({});
+
+    // ২. শুধুমাত্র সফলভাবে বিক্রি হওয়া বুকিং ফিল্টার (status: "paid")
+    const paidBookings = await bookingsCollection.find({ status: "paid" }).toArray();
+
+    let totalTicketsSold = 0;
+    let totalRevenue = 0;
+    const monthlyDataMap = {};
+
+    paidBookings.forEach((booking) => {
+      // টিকিট কাউন্ট (quantity না থাকলে ১ ধরবে)
+      const count = parseInt(booking.quantity) || 1; 
+      totalTicketsSold += count;
+      
+      // 🌟 ফিক্স: আপনার অবজেক্ট অনুযায়ী 'totalPrice' ফিল্ডটি রিড করা হচ্ছে
+      const bookingAmount = parseFloat(booking.totalPrice) || 0;
+      totalRevenue += bookingAmount;
+
+      // চার্টের টাইমলাইন (Month Name বের করা হচ্ছে paidAt থেকে)
+      const paidDate = booking.paidAt ? new Date(booking.paidAt) : new Date(booking.createdAt);
+      const monthName = paidDate.toLocaleString("default", { month: "short" });
+
+      if (!monthlyDataMap[monthName]) {
+        monthlyDataMap[monthName] = { name: monthName, revenue: 0, sales: 0 };
+      }
+      monthlyDataMap[monthName].revenue += bookingAmount;
+      monthlyDataMap[monthName].sales += count;
+    });
+
+    const chartData = Object.values(monthlyDataMap);
+
+    // ফ্রন্টএন্ডে অবজেক্ট রেসপন্স পাঠানো
+    res.send({
+      totalTicketsAdded,
+      totalTicketsSold,
+      totalRevenue: Number(totalRevenue.toFixed(2)), // দশমিক ২ ঘর পর্যন্ত ফিক্সড করে নাম্বার করা হলো
+      chartData
+    });
+
+  } catch (error) {
+    console.error("Error fetching revenue stats:", error);
+    res.status(500).send({ message: "Internal server error", error: error.message });
+  }
+});
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
