@@ -1,6 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY); 
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 5000;
@@ -34,13 +34,14 @@ async function run() {
     const ticketsCollection = database.collection("tickets");
     const bookingsCollection = database.collection("booking");
 
-
     // ==================== PUBLIC / GENERAL TICKETS API ====================
-    
-    // Get all tickets
+
+    // Get all approved tickets (শুধুমাত্র অনুমোদিত টিকিটগুলো পাবলিকলি দেখাবে)
     app.get(`/api/tickets`, async (req, res) => {
       try {
-        const cursor = ticketsCollection.find({});
+        // লজিক ফিক্স: শুধুমাত্র approved টিকিট ফিল্টার করা হয়েছে
+        const query = { status: "approved" };
+        const cursor = ticketsCollection.find(query);
         const result = await cursor.toArray();
         res.send(result);
       } catch (error) {
@@ -59,7 +60,9 @@ async function run() {
         }
         res.send(result);
       } catch (error) {
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
@@ -72,10 +75,14 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error("Error fetching advertised tickets:", error);
-        res.status(500).send({ message: "Failed to fetch advertised tickets", error: error.message });
+        res
+          .status(500)
+          .send({
+            message: "Failed to fetch advertised tickets",
+            error: error.message,
+          });
       }
     });
-
 
     // ==================== USER / CUSTOMER API ====================
 
@@ -83,15 +90,34 @@ async function run() {
     app.post("/api/bookings", async (req, res) => {
       try {
         const bookings = req.body;
+
+        // নিরাপত্তা স্তর: টিকিটটি আসলেই ডেটাবেজে approved কিনা তা চেক করা হচ্ছে
+        if (!bookings.ticketId) {
+          return res.status(400).send({ message: "Missing ticketId" });
+        }
+        const ticket = await ticketsCollection.findOne({
+          _id: new ObjectId(bookings.ticketId),
+        });
+        if (!ticket || ticket.status !== "approved") {
+          return res
+            .status(400)
+            .send({
+              message:
+                "This ticket is not approved or available for booking yet.",
+            });
+        }
+
         const newBookings = {
           ...bookings,
-          status: "pending", 
+          status: "pending",
           createdAt: new Date(),
         };
         const result = await bookingsCollection.insertOne(newBookings);
         res.send(result);
       } catch (error) {
-        res.status(500).send({ message: "Booking failed", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Booking failed", error: error.message });
       }
     });
 
@@ -107,7 +133,9 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error("Error fetching bookings:", error);
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
@@ -117,7 +145,9 @@ async function run() {
         const { bookingId, amount, email } = req.body;
 
         if (!bookingId || !amount) {
-          return res.status(400).send({ message: "Missing bookingId or amount" });
+          return res
+            .status(400)
+            .send({ message: "Missing bookingId or amount" });
         }
 
         const unitAmount = Math.round(amount * 100);
@@ -150,7 +180,9 @@ async function run() {
         res.send({ url: session.url });
       } catch (error) {
         console.error("Stripe Error:", error);
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
@@ -160,7 +192,12 @@ async function run() {
         const { sessionId, bookingId } = req.body;
 
         if (!sessionId || !bookingId) {
-          return res.status(400).send({ success: false, message: "Missing sessionId or bookingId" });
+          return res
+            .status(400)
+            .send({
+              success: false,
+              message: "Missing sessionId or bookingId",
+            });
         }
 
         const session = await stripe.checkout.sessions.retrieve(sessionId);
@@ -169,7 +206,7 @@ async function run() {
           const filter = { _id: new ObjectId(bookingId) };
           const updateDoc = {
             $set: {
-              status: "paid", 
+              status: "paid",
               stripeSessionId: sessionId,
               paidAt: new Date(),
             },
@@ -178,15 +215,34 @@ async function run() {
           const result = await bookingsCollection.updateOne(filter, updateDoc);
 
           if (result.modifiedCount > 0) {
-            res.send({ success: true, message: "Payment verified and booking status updated to paid" });
+            res.send({
+              success: true,
+              message: "Payment verified and booking status updated to paid",
+            });
           } else {
-            res.status(404).send({ success: false, message: "Booking not found or already paid" });
+            res
+              .status(404)
+              .send({
+                success: false,
+                message: "Booking not found or already paid",
+              });
           }
         } else {
-          res.status(400).send({ success: false, message: "Payment verification failed on Stripe" });
+          res
+            .status(400)
+            .send({
+              success: false,
+              message: "Payment verification failed on Stripe",
+            });
         }
       } catch (error) {
-        res.status(500).send({ success: false, message: "Failed to update booking status", error: error.message });
+        res
+          .status(500)
+          .send({
+            success: false,
+            message: "Failed to update booking status",
+            error: error.message,
+          });
       }
     });
 
@@ -196,33 +252,81 @@ async function run() {
         const { email } = req.query;
 
         if (!email) {
-          return res.status(400).send({ message: "Email query parameter is required" });
+          return res
+            .status(400)
+            .send({ message: "Email query parameter is required" });
         }
 
         const query = { userEmail: email, status: "paid" };
-        const result = await bookingsCollection.find(query).sort({ paidAt: -1 }).toArray();
+        const result = await bookingsCollection
+          .find(query)
+          .sort({ paidAt: -1 })
+          .toArray();
         res.send(result);
       } catch (error) {
         console.error("Error fetching transactions:", error);
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
-
     // ==================== VENDOR API ====================
 
-    // Add a new ticket
+    // Add a new ticket (ডিফল্ট স্ট্যাটাস pending করা হয়েছে)
     app.post("/api/tickets", async (req, res) => {
       try {
         const tickets = req.body;
         const newTickets = {
           ...tickets,
+          status: "pending", // 👈 নতুন টিকিট তৈরি হলে সরাসরি pending থাকবে
+          isAdvertised: false, // 👈 শুরুতে বিজ্ঞাপন বন্ধ থাকবে
           createdAt: new Date(),
         };
         const result = await ticketsCollection.insertOne(newTickets);
         res.send(result);
       } catch (error) {
-        res.status(500).send({ message: "Failed to add ticket", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Failed to add ticket", error: error.message });
+      }
+    });
+
+    // ভেন্ডরের নিজস্ব সব টিকিট (Pending, Approved সহ) দেখার API
+    app.get("/api/vendor/tickets", async (req, res) => {
+      try {
+        const query = {};
+        // ভেন্ডরের ইমেইল দিয়ে ফিল্টার করা হচ্ছে (ফ্রন্টএন্ড থেকে কুয়েরি প্যারামিটারে ইমেইল পাঠাতে হবে)
+        if (req.query.email) {
+          query.vendorEmail = req.query.email; // আপনার টিকিট অবজেক্টে যে ফিল্ডে ভেন্ডরের ইমেইল রাখেন (যেমন: vendorEmail বা email)
+        }
+
+        const cursor = ticketsCollection.find(query).sort({ _id: -1 });
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({
+            message: "Failed to fetch vendor tickets",
+            error: error.message,
+          });
+      }
+    });
+
+    // Admin/Vendor-দের নিজস্ব ড্যাশবোর্ডের জন্য সব টিকিট (Pending সহ) দেখার API
+    app.get("/api/admin/all-tickets", async (req, res) => {
+      try {
+        const cursor = ticketsCollection.find({}).sort({ _id: -1 });
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({
+            message: "Failed to fetch all tickets",
+            error: error.message,
+          });
       }
     });
 
@@ -238,18 +342,20 @@ async function run() {
         const updateDoc = {
           $set: {
             ...updateData,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           },
         };
 
         const result = await ticketsCollection.updateOne(filter, updateDoc);
-        
+
         if (result.matchedCount === 0) {
           return res.status(404).send({ message: "Ticket not found" });
         }
         res.send(result);
       } catch (error) {
-        res.status(500).send({ message: "Failed to update ticket", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Failed to update ticket", error: error.message });
       }
     });
 
@@ -259,13 +365,15 @@ async function run() {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
         const result = await ticketsCollection.deleteOne(query);
-        
+
         if (result.deletedCount === 0) {
           return res.status(404).send({ message: "Ticket not found" });
         }
         res.send(result);
       } catch (error) {
-        res.status(500).send({ message: "Failed to delete ticket", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Failed to delete ticket", error: error.message });
       }
     });
 
@@ -277,7 +385,9 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error("Error fetching vendor bookings:", error);
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
@@ -288,7 +398,11 @@ async function run() {
         const { status } = req.body;
 
         if (!["accepted", "rejected"].includes(status)) {
-          return res.status(400).send({ message: "Invalid status type. Must be accepted or rejected." });
+          return res
+            .status(400)
+            .send({
+              message: "Invalid status type. Must be accepted or rejected.",
+            });
         }
 
         const filter = { _id: new ObjectId(id) };
@@ -299,13 +413,23 @@ async function run() {
         const result = await bookingsCollection.updateOne(filter, updateDoc);
 
         if (result.modifiedCount > 0) {
-          res.send({ success: true, message: `Booking status successfully updated to ${status}` });
+          res.send({
+            success: true,
+            message: `Booking status successfully updated to ${status}`,
+          });
         } else {
-          res.status(404).send({ success: false, message: "Booking item not found or status went unchanged" });
+          res
+            .status(404)
+            .send({
+              success: false,
+              message: "Booking item not found or status went unchanged",
+            });
         }
       } catch (error) {
         console.error("Error updating booking status:", error);
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
@@ -313,24 +437,34 @@ async function run() {
     app.get("/api/vendor/revenue-stats", async (req, res) => {
       try {
         const totalTicketsAdded = await ticketsCollection.countDocuments({});
-        const paidBookings = await bookingsCollection.find({ status: "paid" }).toArray();
+        const paidBookings = await bookingsCollection
+          .find({ status: "paid" })
+          .toArray();
 
         let totalTicketsSold = 0;
         let totalRevenue = 0;
         const monthlyDataMap = {};
 
         paidBookings.forEach((booking) => {
-          const count = parseInt(booking.quantity) || 1; 
+          const count = parseInt(booking.quantity) || 1;
           totalTicketsSold += count;
-          
+
           const bookingAmount = parseFloat(booking.totalPrice) || 0;
           totalRevenue += bookingAmount;
 
-          const paidDate = booking.paidAt ? new Date(booking.paidAt) : new Date(booking.createdAt);
-          const monthName = paidDate.toLocaleString("default", { month: "short" });
+          const paidDate = booking.paidAt
+            ? new Date(booking.paidAt)
+            : new Date(booking.createdAt);
+          const monthName = paidDate.toLocaleString("default", {
+            month: "short",
+          });
 
           if (!monthlyDataMap[monthName]) {
-            monthlyDataMap[monthName] = { name: monthName, revenue: 0, sales: 0 };
+            monthlyDataMap[monthName] = {
+              name: monthName,
+              revenue: 0,
+              sales: 0,
+            };
           }
           monthlyDataMap[monthName].revenue += bookingAmount;
           monthlyDataMap[monthName].sales += count;
@@ -342,14 +476,15 @@ async function run() {
           totalTicketsAdded,
           totalTicketsSold,
           totalRevenue: Number(totalRevenue.toFixed(2)),
-          chartData
+          chartData,
         });
       } catch (error) {
         console.error("Error fetching revenue stats:", error);
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
-
 
     // ==================== ADMIN API ====================
 
@@ -360,7 +495,9 @@ async function run() {
         const { status } = req.body;
 
         if (!["approved", "rejected"].includes(status)) {
-          return res.status(400).send({ message: "Invalid status status type" });
+          return res
+            .status(400)
+            .send({ message: "Invalid status status type" });
         }
 
         const filter = { _id: new ObjectId(id) };
@@ -371,12 +508,22 @@ async function run() {
         const result = await ticketsCollection.updateOne(filter, updateDoc);
 
         if (result.modifiedCount > 0) {
-          res.send({ success: true, message: `Ticket status updated to ${status}` });
+          res.send({
+            success: true,
+            message: `Ticket status updated to ${status}`,
+          });
         } else {
-          res.status(404).send({ success: false, message: "Ticket not found or status unchanged" });
+          res
+            .status(404)
+            .send({
+              success: false,
+              message: "Ticket not found or status unchanged",
+            });
         }
       } catch (error) {
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
@@ -387,15 +534,20 @@ async function run() {
         const { isAdvertised } = req.body;
 
         if (typeof isAdvertised !== "boolean") {
-          return res.status(400).send({ message: "Invalid advertisement status type" });
+          return res
+            .status(400)
+            .send({ message: "Invalid advertisement status type" });
         }
 
         if (isAdvertised) {
-          const advertisedCount = await ticketsCollection.countDocuments({ isAdvertised: true });
+          const advertisedCount = await ticketsCollection.countDocuments({
+            isAdvertised: true,
+          });
           if (advertisedCount >= 6) {
-            return res.status(400).send({ 
-              success: false, 
-              message: "Limit reached! You cannot advertise more than 6 tickets at a time." 
+            return res.status(400).send({
+              success: false,
+              message:
+                "Limit reached! You cannot advertise more than 6 tickets at a time.",
             });
           }
         }
@@ -408,18 +560,23 @@ async function run() {
         const result = await ticketsCollection.updateOne(filter, updateDoc);
 
         if (result.modifiedCount > 0) {
-          res.send({ 
-            success: true, 
-            message: isAdvertised ? "Ticket added to advertisements" : "Ticket removed from advertisements" 
+          res.send({
+            success: true,
+            message: isAdvertised
+              ? "Ticket added to advertisements"
+              : "Ticket removed from advertisements",
           });
         } else {
-          res.status(404).send({ 
-            success: false, 
-            message: "Ticket not found, not approved, or advertisement status unchanged" 
+          res.status(404).send({
+            success: false,
+            message:
+              "Ticket not found, not approved, or advertisement status unchanged",
           });
         }
       } catch (error) {
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
@@ -435,35 +592,41 @@ async function run() {
 
         let activeBuses = 0;
         try {
-          activeBuses = await ticketsCollection.countDocuments({ status: "approved" });
+          activeBuses = await ticketsCollection.countDocuments({
+            status: "approved",
+          });
         } catch (err) {
           console.error("Error counting active buses:", err);
         }
 
         let totalUsers = 0;
         try {
-          const uniqueUsersArray = await bookingsCollection.distinct("userEmail");
+          const uniqueUsersArray =
+            await bookingsCollection.distinct("userEmail");
           totalUsers = uniqueUsersArray.length;
         } catch (err) {
           console.error("Error counting distinct users:", err);
-          totalUsers = totalBookings; 
+          totalUsers = totalBookings;
         }
 
         res.send({
           totalBookings,
           totalUsers,
-          activeBuses
+          activeBuses,
         });
       } catch (error) {
         console.error("Global Admin Stats Error:", error);
-        res.status(500).send({ message: "Internal server error", error: error.message });
+        res
+          .status(500)
+          .send({ message: "Internal server error", error: error.message });
       }
     });
 
-
     // MongoDB connection verification ping
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!",
+    );
   } finally {
     // client.close() is omitted to keep connection alive
   }
