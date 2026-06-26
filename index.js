@@ -36,10 +36,9 @@ async function run() {
 
     // ==================== PUBLIC / GENERAL TICKETS API ====================
 
-    // Get all approved tickets (শুধুমাত্র অনুমোদিত টিকিটগুলো পাবলিকলি দেখাবে)
+    // Get all approved tickets
     app.get(`/api/tickets`, async (req, res) => {
       try {
-        // লজিক ফিক্স: শুধুমাত্র approved টিকিট ফিল্টার করা হয়েছে
         const query = { status: "approved" };
         const cursor = ticketsCollection.find(query);
         const result = await cursor.toArray();
@@ -91,7 +90,6 @@ async function run() {
       try {
         const bookings = req.body;
 
-        // নিরাপত্তা স্তর: টিকিটটি আসলেই ডেটাবেজে approved কিনা তা চেক করা হচ্ছে
         if (!bookings.ticketId) {
           return res.status(400).send({ message: "Missing ticketId" });
         }
@@ -105,6 +103,14 @@ async function run() {
               message:
                 "This ticket is not approved or available for booking yet.",
             });
+        }
+
+        // বাড়তি নিরাপত্তা: স্টকে পর্যাপ্ত টিকিট আছে কিনা চেক করা হচ্ছে
+        const bookedQuantity = parseInt(bookings.quantity) || 1;
+        if (ticket.quantity < bookedQuantity) {
+          return res
+            .status(400)
+            .send({ message: "Requested ticket quantity exceeds availability!" });
         }
 
         const newBookings = {
@@ -186,7 +192,7 @@ async function run() {
       }
     });
 
-    // Verify Stripe payment and update booking status to 'paid'
+    // Verify Stripe payment, update booking status to 'paid' & decrease ticket quantity
     app.post("/api/bookings/verify-payment", async (req, res) => {
       try {
         const { sessionId, bookingId } = req.body;
@@ -204,6 +210,19 @@ async function run() {
 
         if (session.payment_status === "paid") {
           const filter = { _id: new ObjectId(bookingId) };
+          
+          // ১. প্রথমে বুকিং-এর ডিটেইলস ডাটাবেজ থেকে খুঁজে বের করছি
+          const booking = await bookingsCollection.findOne(filter);
+          
+          if (!booking) {
+            return res.status(404).send({ success: false, message: "Booking not found" });
+          }
+
+          // ডাবল পেমেন্ট ভেরিফিকেশন রিকোয়েস্টে ডাবল মাইনাস হওয়া রোধ করতে এই চেক
+          if (booking.status === "paid") {
+            return res.status(400).send({ success: false, message: "Booking is already paid" });
+          }
+
           const updateDoc = {
             $set: {
               status: "paid",
@@ -212,12 +231,25 @@ async function run() {
             },
           };
 
+          // ২. বুকিং স্ট্যাটাস 'paid' আপডেট করছি
           const result = await bookingsCollection.updateOne(filter, updateDoc);
 
           if (result.modifiedCount > 0) {
+            
+            // ৩. মেইন টিকিট থেকে সিট/কোয়ান্টিটি মাইনাস (বিয়োগ) করার লজিক
+            if (booking.ticketId && booking.quantity) {
+              const ticketFilter = { _id: new ObjectId(booking.ticketId) };
+              const bookedQuantity = parseInt(booking.quantity) || 1;
+
+              // আপনার অবজেক্টের স্ট্রাকচার অনুযায়ী 'quantity' ফিল্ড আপডেট করা হয়েছে
+              await ticketsCollection.updateOne(ticketFilter, {
+                $inc: { quantity: -bookedQuantity } 
+              });
+            }
+
             res.send({
               success: true,
-              message: "Payment verified and booking status updated to paid",
+              message: "Payment verified and ticket stock updated successfully",
             });
           } else {
             res
@@ -273,14 +305,14 @@ async function run() {
 
     // ==================== VENDOR API ====================
 
-    // Add a new ticket (ডিফল্ট স্ট্যাটাস pending করা হয়েছে)
+    // Add a new ticket
     app.post("/api/tickets", async (req, res) => {
       try {
         const tickets = req.body;
         const newTickets = {
           ...tickets,
-          status: "pending", // 👈 নতুন টিকিট তৈরি হলে সরাসরি pending থাকবে
-          isAdvertised: false, // 👈 শুরুতে বিজ্ঞাপন বন্ধ থাকবে
+          status: "pending", 
+          isAdvertised: false, 
           createdAt: new Date(),
         };
         const result = await ticketsCollection.insertOne(newTickets);
@@ -292,13 +324,12 @@ async function run() {
       }
     });
 
-    // ভেন্ডরের নিজস্ব সব টিকিট (Pending, Approved সহ) দেখার API
+    // Get vendor's own tickets
     app.get("/api/vendor/tickets", async (req, res) => {
       try {
         const query = {};
-        // ভেন্ডরের ইমেইল দিয়ে ফিল্টার করা হচ্ছে (ফ্রন্টএন্ড থেকে কুয়েরি প্যারামিটারে ইমেইল পাঠাতে হবে)
         if (req.query.email) {
-          query.vendorEmail = req.query.email; // আপনার টিকিট অবজেক্টে যে ফিল্ডে ভেন্ডরের ইমেইল রাখেন (যেমন: vendorEmail বা email)
+          query.vendorEmail = req.query.email; 
         }
 
         const cursor = ticketsCollection.find(query).sort({ _id: -1 });
@@ -314,7 +345,7 @@ async function run() {
       }
     });
 
-    // Admin/Vendor-দের নিজস্ব ড্যাশবোর্ডের জন্য সব টিকিট (Pending সহ) দেখার API
+    // Admin/Vendor-দের নিজস্ব ড্যাশবোর্ডের জন্য সব টিকিট দেখার API
     app.get("/api/admin/all-tickets", async (req, res) => {
       try {
         const cursor = ticketsCollection.find({}).sort({ _id: -1 });
@@ -330,7 +361,7 @@ async function run() {
       }
     });
 
-    // Update ticket details (excluding _id to avoid MongoDB error)
+    // Update ticket details
     app.put("/api/tickets/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -433,7 +464,7 @@ async function run() {
       }
     });
 
-    // Get vendor analytics (Total tickets, sales, total revenue, and monthly chart data)
+    // Get vendor analytics
     app.get("/api/vendor/revenue-stats", async (req, res) => {
       try {
         const totalTicketsAdded = await ticketsCollection.countDocuments({});
