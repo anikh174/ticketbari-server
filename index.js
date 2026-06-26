@@ -161,8 +161,8 @@ async function run() {
         const sessionData = {
           payment_method_types: ["card"],
           mode: "payment",
-          success_url: `http://localhost:3000/dashboard/user/payment/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${bookingId}`,
-          cancel_url: `http://localhost:3000/dashboard/user/payment/cancel?canceled=true`,
+          success_url: `https://ticket-barii.vercel.app/dashboard/user/payment/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${bookingId}`,
+          cancel_url: `https://ticket-barii.vercel.app/user/payment/cancel?canceled=true`,
           line_items: [
             {
               price_data: {
