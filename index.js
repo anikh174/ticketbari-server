@@ -161,6 +161,50 @@ async function run() {
       }
     });
 
+    // ১. টিকিট আপডেট করার API
+app.put("/api/tickets/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const filter = { _id: new ObjectId(id) };
+    const updatedTicket = req.body;
+
+    // _id ফিল্ডটি বাদ দিয়ে আপডেট ডাটা তৈরি করা (যেন মঙ্গোডিবি এরর না দেয়)
+    const { _id, ...updateData } = updatedTicket;
+
+    const updateDoc = {
+      $set: {
+        ...updateData,
+        updatedAt: new Date()
+      },
+    };
+
+    const result = await ticketsCollection.updateOne(filter, updateDoc);
+    
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Ticket not found" });
+    }
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to update ticket", error: error.message });
+  }
+});
+
+// ২. টিকিট ডিলিট করার API
+app.delete("/api/tickets/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await ticketsCollection.deleteOne(query);
+    
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Ticket not found" });
+    }
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to delete ticket", error: error.message });
+  }
+});
+
     // ২. পেমেন্ট সফল হওয়ার পর ব্যাকএন্ডে ভেরিফাই করার এপিআই
     app.post("/api/bookings/verify-payment", async (req, res) => {
       try {
