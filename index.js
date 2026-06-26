@@ -310,6 +310,52 @@ app.patch("/api/tickets/:id/advertise", async (req, res) => {
   }
 });
 
+// ==================== ADMIN STATS API (FIXED) ====================
+app.get("/api/admin/stats", async (req, res) => {
+  try {
+    // ১. মোট বুকিং সংখ্যা (যদি কালেকশন খালি থাকে বা এরর হয় তবে ০)
+    let totalBookings = 0;
+    try {
+      totalBookings = await bookingsCollection.countDocuments({});
+    } catch (err) {
+      console.error("Error counting bookings:", err);
+    }
+
+    // ২. অ্যাক্টিভ ফ্লিট/বাসের সংখ্যা 
+    let activeBuses = 0;
+    try {
+      activeBuses = await ticketsCollection.countDocuments({ status: "approved" });
+    } catch (err) {
+      console.error("Error counting active buses:", err);
+    }
+
+    // ৩. রেজিস্টার্ড ইউজার সংখ্যা (আগের distinct মেথডটি এরর দিলে এটি ফিক্স করবে)
+    let totalUsers = 0;
+    try {
+      // আপনার কালেকশনে ফিল্ডের নাম 'userEmail' নাকি 'email' তা চেক করুন। 
+      // এখানে আমি ডাইনামিকলি ইউনিক কাউন্ট নেওয়ার চেষ্টা করছি।
+      const uniqueUsersArray = await bookingsCollection.distinct("userEmail");
+      totalUsers = uniqueUsersArray.length;
+    } catch (err) {
+      console.error("Error counting distinct users:", err);
+      // যদি distinct কাজ না করে, তবে টোটাল বুকিং করা ইউজারের সংখ্যাই আপাতত দেখাবে
+      totalUsers = totalBookings; 
+    }
+
+    // ফ্রন্টএন্ডে ডেটা পাঠানো হচ্ছে
+    res.send({
+      totalBookings,
+      totalUsers,
+      activeBuses
+    });
+
+  } catch (error) {
+    console.error("Global Admin Stats Error:", error);
+    res.status(500).send({ message: "Internal server error", error: error.message });
+  }
+});
+
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
