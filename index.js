@@ -709,44 +709,44 @@ app.get("/", (req, res) => res.send("TicketBari Server is Running!"));
 
 // --- সব রাউটস ---
 
-// app.get("/api/tickets", async (req, res) => {
-//   try {
-//     const db = await getDb();
-//     const result = await db.collection("tickets").find({ status: "approved" }).toArray();
-//     res.send(result);
-//   } catch (e) { res.status(500).send(e.message); }
-// });
-
 app.get("/api/tickets", async (req, res) => {
   try {
     const db = await getDb();
-    const page = parseInt(req.query.page) || 1; // বর্তমান পেজ নম্বর, ডিফল্ট ১
-    const limit = 6; // প্রতি পেজে ৬টি টিকিট
-    const skip = (page - 1) * limit;
-
-    const query = { status: "approved" };
-
-    // ১. মোট কতগুলো অনুমোদিত টিকিট আছে তা বের করা
-    const totalCount = await db.collection("tickets").countDocuments(query);
-
-    // ২. শুধুমাত্র ৬টি করে টিকিট ফেচ করা
-    const result = await db.collection("tickets")
-      .find(query)
-      .skip(skip)
-      .limit(limit)
-      .toArray();
-
-    // ৩. ডেটা এবং প্যাগিনেশন ইনফো পাঠানো
-    res.send({
-      tickets: result,
-      totalCount: totalCount,
-      totalPages: Math.ceil(totalCount / limit),
-      currentPage: page
-    });
-  } catch (e) { 
-    res.status(500).send(e.message); 
-  }
+    const result = await db.collection("tickets").find({ status: "approved" }).toArray();
+    res.send(result);
+  } catch (e) { res.status(500).send(e.message); }
 });
+
+// app.get("/api/tickets", async (req, res) => {
+//   try {
+//     const db = await getDb();
+//     const page = parseInt(req.query.page) || 1; // বর্তমান পেজ নম্বর, ডিফল্ট ১
+//     const limit = 6; // প্রতি পেজে ৬টি টিকিট
+//     const skip = (page - 1) * limit;
+
+//     const query = { status: "approved" };
+
+//     // ১. মোট কতগুলো অনুমোদিত টিকিট আছে তা বের করা
+//     const totalCount = await db.collection("tickets").countDocuments(query);
+
+//     // ২. শুধুমাত্র ৬টি করে টিকিট ফেচ করা
+//     const result = await db.collection("tickets")
+//       .find(query)
+//       .skip(skip)
+//       .limit(limit)
+//       .toArray();
+
+//     // ৩. ডেটা এবং প্যাগিনেশন ইনফো পাঠানো
+//     res.send({
+//       tickets: result,
+//       totalCount: totalCount,
+//       totalPages: Math.ceil(totalCount / limit),
+//       currentPage: page
+//     });
+//   } catch (e) { 
+//     res.status(500).send(e.message); 
+//   }
+// });
 
 app.get("/api/tickets/:id", async (req, res) => {
   try {
